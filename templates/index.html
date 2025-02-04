@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You ain't doing shit bro</title>
+    <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="main-text">I know mate,</h1>
+        <h1 class="main-text">you ain't doing a shit</h1>
+        <p class="subtext">and that's why I am here to do it on your behalf.</p>
+        <form action="/register-user" method="post" class="form-container">
+            <label for="token" class="form-label">Enter your GitHub Token:</label>
+            <input
+                type="text"
+                id="token"
+                name="token"
+                placeholder="Enter your GitHub token"
+                required
+                class="input-box">
+            <button type="submit" class="cta-button">Let's be lazy</button>
+        </form>
+        {% if message %}
+        <h4 class="main-text">{{message}}</h4>
+        {% endif %}
+    </div>
+</body>
+</html>
