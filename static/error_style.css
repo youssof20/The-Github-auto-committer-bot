@@ -1,0 +1,101 @@
+/* Base Styles */
+body {
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #0a0a0a, #1a1a1a); /* Dark gradient */
+    font-family: 'Roboto', sans-serif; /* Robotic font style */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    color: #ffffff;
+}
+
+/* Neon Text Effect */
+.neon-text {
+    text-align: center;
+    font-size: 6rem;
+    font-weight: bold;
+    color: #ffffff; /* White base for readability */
+    text-shadow:
+        0 0 10px #ff0000,
+        0 0 20px #ff0000,
+        0 0 30px #ff4d4d,
+        0 0 40px #ff4d4d,
+        0 0 60px #ff1a1a,
+        0 0 80px #ff1a1a;
+    animation: glow 1.5s infinite alternate;
+}
+
+/* Subtext Styling */
+.neon-subtext {
+    text-align: center;
+    font-size: 1.8rem;
+    color: #ffffff;
+    text-shadow:
+        0 0 5px #ff4d4d,
+        0 0 10px #ff4d4d,
+        0 0 20px #ff1a1a,
+        0 0 30px #ff0000;
+    margin-top: -10px;
+}
+
+/* Glow Animation */
+@keyframes glow {
+    0%, 100% {
+        text-shadow:
+            0 0 10px #ff0000,
+            0 0 20px #ff0000,
+            0 0 30px #ff4d4d,
+            0 0 40px #ff4d4d,
+            0 0 60px #ff1a1a,
+            0 0 80px #ff1a1a;
+    }
+    50% {
+        text-shadow:
+            0 0 5px #ff0000,
+            0 0 15px #ff4d4d,
+            0 0 25px #ff1a1a,
+            0 0 40px #ff0000;
+    }
+}
+
+/* Call-to-Action Button */
+.cta-button {
+    display: inline-block;
+    margin-top: 2rem;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #000; /* Black text for contrast */
+    background-color: #ff4d4d; /* Bright red for visibility */
+    text-transform: uppercase;
+    text-decoration: none;
+    border: 3px solid #ff4d4d;
+    border-radius: 5px;
+    box-shadow:
+        0 0 10px #ff4d4d,
+        0 0 20px #ff1a1a,
+        0 0 30px #ff0000,
+        0 0 50px #ff0000;
+    transition: all 0.3s ease-in-out;
+}
+
+/* Hover Effect for Button */
+.cta-button:hover {
+    color: #fff; /* White text on hover */
+    background-color: #ff1a1a;
+    box-shadow:
+        0 0 15px #ff4d4d,
+        0 0 30px #ff0000,
+        0 0 50px #ff0000,
+        0 0 80px #ff1a1a;
+    transform: scale(1.1);
+}
+
+/* Center Container */
+.container {
+    text-align: center;
+    padding: 20px;
+}
