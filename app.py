@@ -3,177 +3,208 @@ import json
 import os
 import logging
 import datetime
-from crypt import methods, crypt
 import threading
-
 from cryptography.fernet import Fernet
-
-from flask import Flask, request, render_template, redirect
+from flask import Flask, request, render_template
 import requests
 import mysql.connector
 import schedule
 import time
-
 import configs
 
+# Initialize Flask app
 app = Flask(__name__)
 
-logging.getLogger().setLevel(logging.INFO)
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-full_repo_name_post_creation = "Hello, all Lazy People"
-
-
+# Initialize encryption
 crypt = Fernet(os.environ.get("FERNET_KEY"))
+
+# Constants
+FULL_REPO_NAME_POST_CREATION = "Hello, all Lazy People"
+
 
 @app.route("/", methods=["GET"])
 def home():
+    """Render the home page."""
     return render_template("index.html")
 
 
 @app.route("/register-user", methods=["POST"])
 def register_user():
-    USER_TOKEN = request.form.get("token")
-    encrypted_token = crypt.encrypt(USER_TOKEN.encode())
-    formulated_body_json = {
+    """Register a new user and create a private repository."""
+    user_token = request.form.get("token")
+    encrypted_token = crypt.encrypt(user_token.encode())
+
+    # Create a new private repository
+    repo_body = {
         "name": configs.HARDCODED_REPOSITORY_NAME,
         "description": "Just fooling along for fun - No harm intended",
-        "private": "true"
+        "private": True,
     }
-    COMPLETE_API_URL = f"{configs.GITHUB_API_URL}/user/repos"
-    headers = {
-        "Authorization": "Bearer " + USER_TOKEN
-    }
-    logging.info(f"Sending POST API Request to {COMPLETE_API_URL}")
-    response = requests.post(url=COMPLETE_API_URL, headers=headers, json=formulated_body_json)
-    if response.status_code == 201:
-        logging.info("Repository has been successfully created")
-        full_repo_name_post_creation = response.json().get("owner").get("login")
-        owner_name = full_repo_name_post_creation
-        db_connection_object = mysql.connector.connect(
+    headers = {"Authorization": f"Bearer {user_token}"}
+    repo_url = f"{configs.GITHUB_API_URL}/user/repos"
+
+    logger.info(f"Sending POST request to {repo_url}")
+    response = requests.post(repo_url, headers=headers, json=repo_body)
+
+    if response.status_code != 201:
+        logger.error(f"Failed to create repository: {response.json()}")
+        return render_template("error_page.html")
+
+    logger.info("Repository created successfully")
+    owner_name = response.json().get("owner").get("login")
+
+    # Store user details in the database
+    try:
+        db_connection = mysql.connector.connect(
             host=os.environ.get("MYSQL_HOST"),
             port=os.environ.get("MYSQL_PORT"),
             user=os.environ.get("MYSQL_USER"),
             password=os.environ.get("MYSQL_PASSWORD"),
-            database=os.environ.get("MYSQL_DATABASE")
+            database=os.environ.get("MYSQL_DATABASE"),
         )
-        if db_connection_object.is_connected():
-            logging.info("Connected to MySQL Database")
-            cursor = db_connection_object.cursor()
-            INSERT_QUERY = f"INSERT into all_registered_users (username,date_created,to_end_date,token,is_active,file_sha) VALUES ('{owner_name}','{datetime.datetime.today()}','{datetime.datetime.today() + datetime.timedelta(days=7)}','{encrypted_token.decode('utf-8')}',1,'')"
-            cursor.execute(INSERT_QUERY)
-            db_connection_object.commit()
-            cursor.close()
-            db_connection_object.close()
-        else:
-            logging.info("Some error occured while connecting to MySQL Database")
-            logging.error(json.dumps({
-                "message": "Repository created successfully but some error occured while connecting to MySQL Database"}))
-            return render_template("error_page.html")
-
-        response_status_code_for_base_file_creation = create_readme_file(owner_name, USER_TOKEN)
-        if response_status_code_for_base_file_creation.status_code == 201:
-            generated_file_sha=response_status_code_for_base_file_creation.json().get("content").get("sha")
-            db_connection_object = mysql.connector.connect(
-                host=os.environ.get("MYSQL_HOST"),
-                port=os.environ.get("MYSQL_PORT"),
-                user=os.environ.get("MYSQL_USER"),
-                password=os.environ.get("MYSQL_PASSWORD"),
-                database=os.environ.get("MYSQL_DATABASE")
+        if db_connection.is_connected():
+            logger.info("Connected to MySQL Database")
+            cursor = db_connection.cursor()
+            insert_query = """
+                INSERT INTO all_registered_users 
+                (username, date_created, to_end_date, token, is_active, file_sha) 
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(
+                insert_query,
+                (
+                    owner_name,
+                    datetime.datetime.today(),
+                    datetime.datetime.today() + datetime.timedelta(days=7),
+                    encrypted_token.decode("utf-8"),
+                    1,
+                    "",
+                ),
             )
-            if db_connection_object.is_connected():
-                logging.info("Connected to MySQL Database")
-                cursor = db_connection_object.cursor()
-                UPDATE_QUERY=f"UPDATE all_registered_users SET file_sha='{generated_file_sha}' WHERE username='{owner_name}'"
-                cursor.execute(UPDATE_QUERY)
-                db_connection_object.commit()
-                cursor.close()
-                db_connection_object.close()
-
-            return render_template("index.html",
-                                   message="Congratulations! Take a break while I do the hard work for you")
+            db_connection.commit()
+            cursor.close()
+            db_connection.close()
         else:
-            logging.error(json.dumps({"ERR_STATUS_CODE": response_status_code_for_base_file_creation.status_code,
-                                      "message": "Some error occured while creating the file in the repository"}))
+            logger.error("Failed to connect to MySQL Database")
             return render_template("error_page.html")
-    else:
-        logging.info(f"Eror Message: {response.json()}")
-        logging.info("Some error occured while creating the repository")
-        logging.error(json.dumps(
-            {"ERR_STATUS_CODE": response.status_code, "message": "Some error occured while creating the repository"})
-        )
+    except Exception as e:
+        logger.error(f"Database error: {e}")
         return render_template("error_page.html")
+
+    # Create README file in the repository
+    readme_response = create_readme_file(owner_name, user_token)
+    if readme_response.status_code != 201:
+        logger.error(f"Failed to create README file: {readme_response.json()}")
+        return render_template("error_page.html")
+
+    # Update file SHA in the database
+    file_sha = readme_response.json().get("content").get("sha")
+    try:
+        db_connection = mysql.connector.connect(
+            host=os.environ.get("MYSQL_HOST"),
+            port=os.environ.get("MYSQL_PORT"),
+            user=os.environ.get("MYSQL_USER"),
+            password=os.environ.get("MYSQL_PASSWORD"),
+            database=os.environ.get("MYSQL_DATABASE"),
+        )
+        if db_connection.is_connected():
+            logger.info("Connected to MySQL Database")
+            cursor = db_connection.cursor()
+            update_query = """
+                UPDATE all_registered_users 
+                SET file_sha = %s 
+                WHERE username = %s
+            """
+            cursor.execute(update_query, (file_sha, owner_name))
+            db_connection.commit()
+            cursor.close()
+            db_connection.close()
+    except Exception as e:
+        logger.error(f"Database error: {e}")
+        return render_template("error_page.html")
+
+    return render_template(
+        "index.html", message="Congratulations! Take a break while I do the hard work for you"
+    )
 
 
 def create_readme_file(github_username, github_token):
-    formatted_body = {
+    """Create a README file in the repository."""
+    readme_body = {
         "message": configs.FIRST_COMMIT_MESSAGE,
         "content": base64.b64encode(configs.FIRST_COMMIT_CONTENT.encode()).decode(),
     }
-    headers = {
-        "Authorization": "Bearer " + github_token
-    }
-    URL_FOR_FILE_CREATION = configs.GITHUB_API_URL + f"/repos/{github_username}/{configs.HARDCODED_REPOSITORY_NAME}/contents/readme.md"
-    logging.info(f"{URL_FOR_FILE_CREATION}")
-    response = requests.put(url=URL_FOR_FILE_CREATION, headers=headers, json=formatted_body)
-    return response
+    headers = {"Authorization": f"Bearer {github_token}"}
+    readme_url = (
+        f"{configs.GITHUB_API_URL}/repos/{github_username}/{configs.HARDCODED_REPOSITORY_NAME}/contents/readme.md"
+    )
+    logger.info(f"Creating README file at {readme_url}")
+    return requests.put(readme_url, headers=headers, json=readme_body)
 
 
-def do_random_commit_on_readme_file(github_username,github_token,file_sha):
-    formatted_body = {
+def do_random_commit_on_readme_file(github_username, github_token, file_sha):
+    """Make a dummy commit to the README file."""
+    commit_body = {
         "message": configs.FIRST_COMMIT_MESSAGE,
         "content": base64.b64encode(configs.FIRST_COMMIT_CONTENT.encode()).decode(),
-        "sha":file_sha
+        "sha": file_sha,
     }
-    headers={
-        "Authorization": "Bearer " + github_token
-    }
-    URL_FOR_FILE_CREATION = configs.GITHUB_API_URL + f"/repos/{github_username}/{configs.HARDCODED_REPOSITORY_NAME}/contents/readme.md"
-
-    response = requests.put(url=URL_FOR_FILE_CREATION, headers=headers, json=formatted_body)
-    if response.status_code==200:
-        logging.info(f"Successfully made a dummy commit for user {github_username}")
-
+    headers = {"Authorization": f"Bearer {github_token}"}
+    commit_url = (
+        f"{configs.GITHUB_API_URL}/repos/{github_username}/{configs.HARDCODED_REPOSITORY_NAME}/contents/readme.md"
+    )
+    response = requests.put(commit_url, headers=headers, json=commit_body)
+    if response.status_code == 200:
+        logger.info(f"Successfully made a dummy commit for user {github_username}")
     else:
-        logging.error(f"Status Code::{response.status_code}")
-        logging.error(f"Something went wrong while having the dummy commit for user {github_username}")
+        logger.error(f"Failed to make a dummy commit for user {github_username}: {response.status_code}")
 
 
 def run_the_schedule_script():
-    db_connection_object = mysql.connector.connect(
-        host=os.environ.get("MYSQL_HOST"),
-        port=os.environ.get("MYSQL_PORT"),
-        user=os.environ.get("MYSQL_USER"),
-        password=os.environ.get("MYSQL_PASSWORD"),
-        database=os.environ.get("MYSQL_DATABASE")
-    )
-    if db_connection_object.is_connected():
-        logging.info("Connected to MySQL Database")
-        cursor = db_connection_object.cursor()
-        FETCH_QUERY=f"SELECT username,token,file_sha from all_registered_users WHERE is_active=1"
-        cursor.execute(FETCH_QUERY)
-        result=cursor.fetchall()
-        logging.info(f"Result is {result}")
-        for i in range(0,len(result)):
-            git_username=result[i][0]
-            git_token=result[i][1]
-            git_token=crypt.decrypt(git_token.encode()).decode()
-            file_sha=result[i][2]
-            do_random_commit_on_readme_file(git_username,git_token,file_sha)
-        db_connection_object.commit()
-        cursor.close()
-        db_connection_object.close()
+    """Fetch active users and make dummy commits."""
+    try:
+        db_connection = mysql.connector.connect(
+            host=os.environ.get("MYSQL_HOST"),
+            port=os.environ.get("MYSQL_PORT"),
+            user=os.environ.get("MYSQL_USER"),
+            password=os.environ.get("MYSQL_PASSWORD"),
+            database=os.environ.get("MYSQL_DATABASE"),
+        )
+        if db_connection.is_connected():
+            logger.info("Connected to MySQL Database")
+            cursor = db_connection.cursor()
+            fetch_query = "SELECT username, token, file_sha FROM all_registered_users WHERE is_active = 1"
+            cursor.execute(fetch_query)
+            results = cursor.fetchall()
+            for result in results:
+                git_username, encrypted_token, file_sha = result
+                git_token = crypt.decrypt(encrypted_token.encode()).decode()
+                do_random_commit_on_readme_file(git_username, git_token, file_sha)
+            cursor.close()
+            db_connection.close()
+    except Exception as e:
+        logger.error(f"Database error: {e}")
 
 
+# Schedule the script to run daily at 12:00 AM JST
 schedule.every().day.at("12:00").do(run_the_schedule_script)
 
+
 def run_schedule():
+    """Run the scheduler in a separate thread."""
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    # Start the scheduler thread
     schedule_thread = threading.Thread(target=run_schedule, daemon=True)
     schedule_thread.start()
-    app.run(port=3009, host='0.0.0.0')
 
+    # Start the Flask app
+    app.run(port=3009, host="0.0.0.0")
